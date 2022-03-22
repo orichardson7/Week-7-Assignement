@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Owen Richardson - Week 7 Activity</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="network.js"></script>
+    <style>
+        .label{
+            font-size: 10px;
+            font-family: Arial;
+            text-anchor: middle;
+        }
+        circle{
+            fill-opacity: .85;
+        }
+        line{
+            stroke:#707070;
+            stroke-opacity:0.75;
+        }
+        .unfocused{
+            opacity: .25;
+        }
+        </style>
+</head>
+<body>
+<div style="text-align: center;">
+<h1>Owen Richardson - Week 7 Activity</h1>
+<p>Network visualization - Excluding Unkown Publishers.</p>
+</div>
+<svg width="100%" height="75%" viewBox="0 0 1000 1000">
+</svg>
+<script>
+    d3.json("Publisher_Network.json").then(function (data){
+        //Assign links and nodes
+        let nodes = data.nodes
+        let links = data.links
+
+        const minRadius = 5;
+        const maxRadius = 50;
+
+        //Create scale for circles
+        let nodeDegrees = d3.map(nodes, n => n.size)
+        let scale_radius = d3.scaleSqrt()
+            .range([minRadius,maxRadius])
+            .domain(d3.extent(Object.values(nodeDegrees)))
+            
+
+        // For each link, get the pair (source and target)
+        links.forEach(link => {
+            let source = link.source
+            let target = link.target
+
+            const sourceNode = nodes.findIndex(n => n.id === source)
+            const targetNode = nodes.findIndex(n => n.id === target)
+
+            if (sourceNode != -1 && targetNode != -1)
+            {
+                link.source = sourceNode
+                link.target = targetNode
+            }
+            else
+                console.log("Couldn't find source and/or target for " + source + ", " + target + "(" + sourceNode + ", " + targetNode + ")")
+        })
+
+        //Set scale for links
+        let scaleForLink = d3.scaleLinear()
+            .domain(d3.extent(data.links,function (d){return d.weight}))
+            .range([1,4])
+
+        //Get node IDs
+        let nodeIds = d3.map(nodes, n => n.id)
+
+        //Get color scale
+        let color = d3.scaleSequential()
+            .interpolator(d3.interpolateTurbo)
+            .domain(d3.extent(Object.values(nodeIds)))
+
+        //Init SVG and assign width and height
+        let svg = d3.select('svg')
+        let width = 1000
+        let height = 1000
+
+        // create links between the different publishers
+        let link_elements = svg.append("g")
+            .attr('transform',`translate(${width/2},${height/2})`)
+            .selectAll(".line")
+            .data(links)
+            .enter()
+            .append("line")
+            .style("stroke-width", function (d){
+                return scaleForLink(d.weight)
+            })
+
+        // create nodes for publishers
+        let node_elements = svg.append("g")
+            .attr('transform',`translate(${width/2},${height/2})`)
+            .selectAll(".circle")
+            .data(nodes)
+            .enter()
+            .append("g")
+            .attr("id", function(d) {return "nodeid_" + d.id})
+            .on("mouseenter",function (d,data){
+                // Dim all the nodes and links
+                node_elements.classed("unfocused",true)
+                link_elements.classed("unfocused",true)
+
+                // focus on the node we're in
+                d3.select("#nodeid_" + data.id)
+                    .classed("unfocused", false)
+
+                // focus on the adjacent nodes 
+                d3.selectAll(".connectedTo_" + data.id)
+                    .classed("unfocused", false)
+            })
+            .on("mouseleave",function (d,data){
+                d3.selectAll(".unfocused").classed("unfocused",false)
+            })
+
+        node_elements
+            .append("circle")
+            .attr("r", function (d,i) {
+                return scale_radius(nodeDegrees[i])
+            })
+            .attr("fill", function (d) { return color(d.id)
+            })
+
+        //Add publisher name to nodes
+        node_elements.append("text")
+            .attr("class","label")
+            .text(function (d){return d.name})
+
+        //Start simulation
+        d3.forceSimulation(nodes)
+            .force("collide",
+                d3.forceCollide()
+                    .radius(maxRadius * 1.5)
+            )
+            .force("x", d3.forceX())
+            .force("y", d3.forceY())
+            .force("charge", d3.forceManyBody())
+            .force("link", d3.forceLink(links))
+            .on("tick", ticked);
+
+        // Put classes on each nodes so we can select when one is focused on based on the links.
+        links.forEach(link => {
+            d3.select("#nodeid_" + link.source.id)
+                .classed("connectedTo_" + link.target.id, true)
+            d3.select("#nodeid_" + link.target.id)
+                .classed("connectedTo_" + link.source.id, true)
+        })
+
+        // Do the same for the links
+        d3.selectAll("line")
+            .attr("class", function(d) { return "connectedTo_" + d.source.id + " connectedTo_" + d.target.id } )
+
+        //Move nodes and links based on each ticked call
+        function ticked() {
+        node_elements
+            .attr('transform', function(d){return `translate(${d.x},${d.y})`})
+
+        //link each node's coordinates to another's coordinates
+        link_elements
+            .attr("x1",function(d){return d.source.x})
+            .attr("x2",function(d){return d.target.x})
+            .attr("y1",function(d){return d.source.y})
+            .attr("y2",function(d){return d.target.y})
+    }
+    })
+</script>
+</body>
+</html>
